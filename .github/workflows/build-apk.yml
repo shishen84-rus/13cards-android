@@ -55,26 +55,27 @@ jobs:
         working-directory: game-project
         run: gradle --no-daemon --stacktrace assembleRelease
 
-      - name: Prepare unsigned APK and signing tools
+      - name: Align unsigned APK and prepare signing tool
         shell: bash
         run: |
           set -euxo pipefail
           OUT="$GITHUB_WORKSPACE/signing-package"
           mkdir -p "$OUT/tools/lib"
           UNSIGNED="$GITHUB_WORKSPACE/game-project/app/build/outputs/apk/release/app-release-unsigned.apk"
+          ALIGNED="$OUT/13cards-unsigned-aligned.apk"
           test -s "$UNSIGNED"
-          cp "$UNSIGNED" "$OUT/13cards-unsigned.apk"
+          "$ANDROID_HOME/build-tools/35.0.0/zipalign" -f -p 4 "$UNSIGNED" "$ALIGNED"
+          "$ANDROID_HOME/build-tools/35.0.0/zipalign" -c -v 4 "$ALIGNED"
           cp "$ANDROID_HOME/build-tools/35.0.0/apksigner" "$OUT/tools/apksigner"
           cp "$ANDROID_HOME/build-tools/35.0.0/lib/apksigner.jar" "$OUT/tools/lib/apksigner.jar"
-          cp "$ANDROID_HOME/build-tools/35.0.0/zipalign" "$OUT/tools/zipalign"
-          chmod +x "$OUT/tools/apksigner" "$OUT/tools/zipalign"
-          "$ANDROID_HOME/build-tools/35.0.0/aapt2" dump badging "$UNSIGNED" | tee "$OUT/badging.txt"
-          sha256sum "$UNSIGNED" > "$OUT/unsigned-sha256.txt"
+          chmod +x "$OUT/tools/apksigner"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt2" dump badging "$ALIGNED" | tee "$OUT/badging.txt"
+          sha256sum "$ALIGNED" > "$OUT/unsigned-aligned-sha256.txt"
 
-      - name: Upload unsigned release package
+      - name: Upload aligned unsigned release package
         uses: actions/upload-artifact@v4
         with:
-          name: 13cards-unsigned-release-package
+          name: 13cards-aligned-unsigned-release-package
           path: signing-package/
           if-no-files-found: error
           retention-days: 7
