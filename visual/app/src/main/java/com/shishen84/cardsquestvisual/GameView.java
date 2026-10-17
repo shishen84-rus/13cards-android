@@ -20,7 +20,8 @@ public class GameView extends View {
     private Bitmap living, corridor, room, anomaly;
     private int scene = LIVING;
     private boolean ruler, notebook, confession, gabriel, deduction, fragment, ending;
-    private boolean board=false, help=false, choices=false, chapterEnd=false;
+    private boolean board=false, help=false, choices=false, chapterEnd=false, finalePending=false;
+    private int selectedChoice=-1;
     private final List<String[]> dialog = new ArrayList<>();
     private int dialogPos = 0;
 
@@ -53,6 +54,7 @@ public class GameView extends View {
         deduction=sp.getBoolean("deduction",false);
         fragment=sp.getBoolean("fragment",false);
         ending=sp.getBoolean("ending",false);
+        selectedChoice=sp.getInt("choice",-1);
         chapterEnd=ending;
     }
 
@@ -60,7 +62,7 @@ public class GameView extends View {
         sp.edit().putBoolean("ruler",ruler).putBoolean("notebook",notebook)
                 .putBoolean("confession",confession).putBoolean("gabriel",gabriel)
                 .putBoolean("deduction",deduction).putBoolean("fragment",fragment)
-                .putBoolean("ending",ending).apply();
+                .putBoolean("ending",ending).putInt("choice",selectedChoice).apply();
     }
 
     private void startIntro() {
@@ -107,7 +109,7 @@ public class GameView extends View {
 
     private void drawTop(Canvas c) {
         float w=getWidth();
-        round(c, 22,18,w*.34f,78,18, Color.argb(205,15,14,27));
+        round(c,22,18,w*.34f,78,18,Color.argb(205,15,14,27));
         text(c,"‹",48,58,48,Color.WHITE,Paint.Align.CENTER,true);
         text(c,"Глава 1. Не на своём месте",w*.055f,51,24,Color.WHITE,Paint.Align.LEFT,true);
         round(c,w-150,18,w-88,78,16,Color.argb(205,15,14,27));
@@ -244,20 +246,29 @@ public class GameView extends View {
 
     private void drawChapterEnd(Canvas c) {
         float w=getWidth(),h=getHeight();
-        p.setColor(Color.argb(220,6,7,15)); c.drawRect(0,0,w,h,p);
-        text(c,"13 КАРТ",w*.5f,h*.34f,56,Color.rgb(226,211,255),Paint.Align.CENTER,true);
-        text(c,"ОШИБКА В КОЛОДЕ",w*.5f,h*.44f,36,Color.WHITE,Paint.Align.CENTER,true);
-        text(c,"Глава 1: «Не на своём месте» — пройдена",w*.5f,h*.56f,24,Color.rgb(205,198,220),Paint.Align.CENTER,false);
-        text(c,"Фрагмент на мгновение раздваивается... и снова становится одним.",w*.5f,h*.64f,19,Color.rgb(178,168,205),Paint.Align.CENTER,false);
-        round(c,w*.37f,h*.72f,w*.63f,h*.82f,16,Color.rgb(78,61,105));
-        text(c,"Играть ещё раз",w*.5f,h*.785f,20,Color.WHITE,Paint.Align.CENTER,true);
+        p.setColor(Color.argb(225,6,7,15)); c.drawRect(0,0,w,h,p);
+        text(c,"13 КАРТ",w*.5f,h*.28f,54,Color.rgb(226,211,255),Paint.Align.CENTER,true);
+        text(c,"ОШИБКА В КОЛОДЕ",w*.5f,h*.38f,34,Color.WHITE,Paint.Align.CENTER,true);
+        text(c,"Глава 1: «Не на своём месте» — пройдена",w*.5f,h*.49f,23,Color.rgb(205,198,220),Paint.Align.CENTER,false);
+        String result;
+        if(selectedChoice==2) result="Пик замолчал. Ты прав: он знает происхождение фрагмента.";
+        else if(selectedChoice==1) result="Пик раздражён. Похоже, ты попал слишком близко к правде.";
+        else result="Пик уходит от ответа. Сомнения остаются.";
+        text(c,result,w*.5f,h*.58f,19,Color.rgb(190,181,215),Paint.Align.CENTER,false);
+        text(c,"Фрагмент на мгновение раздваивается... и снова становится одним.",w*.5f,h*.65f,18,Color.rgb(178,168,205),Paint.Align.CENTER,false);
+        if(selectedChoice==2) text(c,"ТОЧНЫЙ ВЫВОД",w*.5f,h*.70f,17,Color.rgb(210,180,255),Paint.Align.CENTER,true);
+        round(c,w*.37f,h*.76f,w*.63f,h*.85f,16,Color.rgb(78,61,105));
+        text(c,"Начать главу заново",w*.5f,h*.817f,19,Color.WHITE,Paint.Align.CENTER,true);
     }
 
     @Override public boolean onTouchEvent(MotionEvent e) {
         if(e.getAction()!=MotionEvent.ACTION_UP) return true;
         float x=e.getX()/getWidth(), y=e.getY()/getHeight();
         click();
-        if(chapterEnd){ if(y>.70f && y<.86f) resetGame(); return true; }
+        if(chapterEnd){
+            if(x>.37f && x<.63f && y>.76f && y<.85f) resetGame();
+            return true;
+        }
         if(choices){ handleChoice(y); return true; }
         if(!dialog.isEmpty()) { advanceDialog(); return true; }
         if(help){ help=false; invalidate(); return true; }
@@ -277,7 +288,15 @@ public class GameView extends View {
         if(dialogPos>=dialog.size()){
             dialog.clear(); dialogPos=0;
             if(!sp.getBoolean("intro_done",false)) sp.edit().putBoolean("intro_done",true).apply();
-            if(fragment && !ending && scene==LIVING) choices=true;
+            if(finalePending){
+                finalePending=false;
+                ending=true;
+                chapterEnd=true;
+                save();
+                pickup();
+            } else if(fragment && !ending && scene==LIVING) {
+                choices=true;
+            }
         }
         invalidate();
     }
@@ -322,8 +341,18 @@ public class GameView extends View {
     }
 
     private void handleChoice(float y){
-        if(y>.34f && y<.77f){
-            choices=false; ending=true; chapterEnd=true; save(); pickup(); invalidate();
+        if(y>.36f && y<.46f){
+            selectedChoice=0;
+            choices=false; finalePending=true; save();
+            sayMany(new String[][]{{"Фёдор","Ладно. Пока поверю."},{"Пик","Вот и правильно."},{"Фёдор","Только почему ты всё ещё смотришь на фрагмент?"}});
+        } else if(y>.50f && y<.60f){
+            selectedChoice=1;
+            choices=false; finalePending=true; save();
+            sayMany(new String[][]{{"Фёдор","Ты врёшь."},{"Пик","Следи за словами."},{"Фёдор","Значит, я попал близко."}});
+        } else if(y>.64f && y<.74f){
+            selectedChoice=2;
+            choices=false; finalePending=true; save();
+            sayMany(new String[][]{{"Фёдор","Ты знаешь, откуда это."},{"Пик","..."},{"Фёдор","Ты узнал не просто деталь. Ты узнал место, откуда она пришла."},{"Пик","Не лезь туда, Фёдор. Пока не поймёшь, что именно открылось."}});
         }
     }
 
@@ -334,6 +363,7 @@ public class GameView extends View {
         if(scene==LIVING && fragment && !ending) sayMany(new String[][]{{"Пик","Где ты это взял?"},{"Фёдор","Так ты знаешь, что это?"},{"Пик","Нет."},{"Фёдор","Ты ответил слишком быстро."}});
         invalidate();
     }
+
     private void goRight(){
         if(scene==LIVING || scene==CORRIDOR) scene=ROOM;
         invalidate();
@@ -342,7 +372,7 @@ public class GameView extends View {
     public boolean handleBack(){
         if(chapterEnd) return false;
         if(choices){ choices=false; invalidate(); return true; }
-        if(!dialog.isEmpty()){ dialog.clear(); invalidate(); return true; }
+        if(!dialog.isEmpty()){ dialog.clear(); finalePending=false; invalidate(); return true; }
         if(board){ board=false; invalidate(); return true; }
         if(help){ help=false; invalidate(); return true; }
         if(scene==ROOM || scene==ANOMALY){ scene=CORRIDOR; invalidate(); return true; }
@@ -351,12 +381,16 @@ public class GameView extends View {
     }
 
     private void resetGameConfirm(){
-        sayMany(new String[][]{{"Настройки","Прогресс сохраняется автоматически. Чтобы начать заново, завершите главу и нажмите «Играть ещё раз»."}});
+        sayMany(new String[][]{{"Настройки","Прогресс сохраняется автоматически. Начать главу заново можно только на финальном экране."}});
     }
 
     private void resetGame(){
-        sp.edit().clear().apply(); ruler=notebook=confession=gabriel=deduction=fragment=ending=false;
-        board=help=choices=chapterEnd=false; startIntro(); invalidate();
+        sp.edit().clear().apply();
+        ruler=notebook=confession=gabriel=deduction=fragment=ending=false;
+        board=help=choices=chapterEnd=finalePending=false;
+        selectedChoice=-1;
+        startIntro();
+        invalidate();
     }
 
     private void click(){ try{tone.startTone(ToneGenerator.TONE_PROP_BEEP,35);}catch(Exception ignored){} }
@@ -365,10 +399,13 @@ public class GameView extends View {
     private void round(Canvas c,float x0,float y0,float x1,float y1,float r,int color){
         p.setColor(color); p.setStyle(Paint.Style.FILL); c.drawRoundRect(new RectF(x0,y0,x1,y1),r,r,p);
     }
+
     private void text(Canvas c,String s,float x,float y,float size,int color,Paint.Align align,boolean bold){
-        p.setColor(color); p.setTextSize(size); p.setTextAlign(align); p.setTypeface(bold?Typeface.create(Typeface.SANS_SERIF,Typeface.BOLD):Typeface.SANS_SERIF);
+        p.setColor(color); p.setTextSize(size); p.setTextAlign(align);
+        p.setTypeface(bold?Typeface.create(Typeface.SANS_SERIF,Typeface.BOLD):Typeface.SANS_SERIF);
         c.drawText(s,x,y,p);
     }
+
     private void drawWrapped(Canvas c,String s,float x,float y,float maxW,float size,int color){
         p.setColor(color); p.setTextSize(size); p.setTextAlign(Paint.Align.LEFT); p.setTypeface(Typeface.SANS_SERIF);
         float yy=y; String[] paras=s.split("\\n");
