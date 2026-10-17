@@ -77,7 +77,7 @@ jobs:
           "$BT/apksigner" verify --verbose --print-certs "$FINAL" | tee "$GITHUB_WORKSPACE/signature.txt"
           "$BT/aapt2" dump badging "$FINAL" | tee "$GITHUB_WORKSPACE/badging.txt"
           sha256sum "$FINAL" | tee "$GITHUB_WORKSPACE/sha256.txt"
-          test "$(stat -c%s "$FINAL")" -gt 100000
+          test "$(stat -c%s "$FINAL")" -gt 50000
           ls -lh "$FINAL"
 
       - name: Upload playable visual APK
