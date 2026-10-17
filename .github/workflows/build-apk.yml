@@ -8,7 +8,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 25
 
     steps:
       - name: Checkout repository
@@ -52,49 +52,50 @@ jobs:
           test -f "$GITHUB_WORKSPACE/game-project/app/src/main/AndroidManifest.xml"
           test -f "$GITHUB_WORKSPACE/game-project/app/src/main/assets/game.js"
           test -f "$GITHUB_WORKSPACE/game-project/app/build.gradle"
-          echo '--- app/build.gradle ---'
-          cat "$GITHUB_WORKSPACE/game-project/app/build.gradle"
-          echo '--- AndroidManifest.xml ---'
-          cat "$GITHUB_WORKSPACE/game-project/app/src/main/AndroidManifest.xml"
 
-      - name: Build debug APK with official Android toolchain
+      - name: Build unsigned release APK
         working-directory: game-project
-        run: gradle --no-daemon --stacktrace assembleDebug
+        run: gradle --no-daemon --stacktrace assembleRelease
 
-      - name: Verify manifest and APK signature
+      - name: Sign release APK with a non-debug certificate
         shell: bash
         run: |
           set -euxo pipefail
-          APK="$GITHUB_WORKSPACE/game-project/app/build/outputs/apk/debug/app-debug.apk"
-          test -s "$APK"
           BUILD_TOOLS_DIR="$ANDROID_HOME/build-tools/35.0.0"
+          UNSIGNED="$GITHUB_WORKSPACE/game-project/app/build/outputs/apk/release/app-release-unsigned.apk"
+          test -s "$UNSIGNED"
+          PASS=$(openssl rand -hex 16)
+          keytool -genkeypair -v \
+            -keystore /tmp/cardsquest-release.jks \
+            -storepass "$PASS" \
+            -keypass "$PASS" \
+            -alias cardsquest \
+            -keyalg RSA \
+            -keysize 4096 \
+            -validity 10000 \
+            -dname "CN=Cards Quest,O=Personal,C=RU"
+          "$BUILD_TOOLS_DIR/zipalign" -f -p 4 "$UNSIGNED" /tmp/cardsquest-aligned.apk
+          "$BUILD_TOOLS_DIR/apksigner" sign \
+            --ks /tmp/cardsquest-release.jks \
+            --ks-key-alias cardsquest \
+            --ks-pass "pass:$PASS" \
+            --key-pass "pass:$PASS" \
+            --out "$GITHUB_WORKSPACE/13cards-error-in-deck-chapter1-release-test.apk" \
+            /tmp/cardsquest-aligned.apk
+          APK="$GITHUB_WORKSPACE/13cards-error-in-deck-chapter1-release-test.apk"
           "$BUILD_TOOLS_DIR/aapt2" dump badging "$APK" | tee /tmp/apk-badging.txt
           "$BUILD_TOOLS_DIR/apksigner" verify --verbose --print-certs "$APK" | tee /tmp/apk-signature.txt
-          cp "$APK" "$GITHUB_WORKSPACE/13cards-error-in-deck-chapter1.apk"
-          sha256sum "$GITHUB_WORKSPACE/13cards-error-in-deck-chapter1.apk" | tee /tmp/apk-sha256.txt
-          ls -lh "$GITHUB_WORKSPACE/13cards-error-in-deck-chapter1.apk"
+          if grep -q "application-debuggable" /tmp/apk-badging.txt; then
+            echo "Release APK unexpectedly marked debuggable" >&2
+            exit 1
+          fi
+          sha256sum "$APK" | tee /tmp/apk-sha256.txt
+          ls -lh "$APK"
 
-      - name: Install and launch on Android 15 emulator
-        uses: reactivecircus/android-emulator-runner@v2
-        with:
-          api-level: 35
-          target: google_apis
-          arch: x86_64
-          profile: pixel_6
-          disable-animations: true
-          script: |
-            set -euxo pipefail
-            APK="$GITHUB_WORKSPACE/13cards-error-in-deck-chapter1.apk"
-            adb install -r "$APK"
-            adb shell pm path com.shishen84.cardsquest
-            adb shell am start -W -n com.shishen84.cardsquest/com.shishen84.cardsquest.MainActivity
-            sleep 3
-            adb shell dumpsys activity activities | grep -m1 com.shishen84.cardsquest || true
-
-      - name: Upload installable APK
+      - name: Upload release-test APK
         uses: actions/upload-artifact@v4
         with:
-          name: 13cards-error-in-deck-chapter1-apk
-          path: 13cards-error-in-deck-chapter1.apk
+          name: 13cards-release-test-apk
+          path: 13cards-error-in-deck-chapter1-release-test.apk
           if-no-files-found: error
           retention-days: 30
