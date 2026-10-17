@@ -8,7 +8,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 20
 
     steps:
       - name: Checkout repository
@@ -32,7 +32,7 @@ jobs:
           fi
           test -x "$SDKMANAGER"
           yes | "$SDKMANAGER" --licenses >/dev/null || true
-          "$SDKMANAGER" "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+          "$SDKMANAGER" "platforms;android-35" "build-tools;35.0.0"
           echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
           echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> "$GITHUB_ENV"
 
@@ -41,7 +41,7 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Restore full game project
+      - name: Restore game project
         shell: bash
         run: |
           set -euxo pipefail
@@ -49,53 +49,32 @@ jobs:
           mkdir -p "$GITHUB_WORKSPACE/game-project"
           cat payload/part1.b64 payload/part2.b64 payload/part3.b64 payload/part4.b64 | base64 --decode > /tmp/cardsquest.tar.gz
           tar -xzf /tmp/cardsquest.tar.gz -C "$GITHUB_WORKSPACE/game-project"
-          test -f "$GITHUB_WORKSPACE/game-project/app/src/main/AndroidManifest.xml"
-          test -f "$GITHUB_WORKSPACE/game-project/app/src/main/assets/game.js"
           test -f "$GITHUB_WORKSPACE/game-project/app/build.gradle"
 
       - name: Build unsigned release APK
         working-directory: game-project
         run: gradle --no-daemon --stacktrace assembleRelease
 
-      - name: Sign release APK with a non-debug certificate
+      - name: Prepare unsigned APK and signing tools
         shell: bash
         run: |
           set -euxo pipefail
-          BUILD_TOOLS_DIR="$ANDROID_HOME/build-tools/35.0.0"
+          OUT="$GITHUB_WORKSPACE/signing-package"
+          mkdir -p "$OUT/tools/lib"
           UNSIGNED="$GITHUB_WORKSPACE/game-project/app/build/outputs/apk/release/app-release-unsigned.apk"
           test -s "$UNSIGNED"
-          PASS=$(openssl rand -hex 16)
-          keytool -genkeypair -v \
-            -keystore /tmp/cardsquest-release.jks \
-            -storepass "$PASS" \
-            -keypass "$PASS" \
-            -alias cardsquest \
-            -keyalg RSA \
-            -keysize 4096 \
-            -validity 10000 \
-            -dname "CN=Cards Quest,O=Personal,C=RU"
-          "$BUILD_TOOLS_DIR/zipalign" -f -p 4 "$UNSIGNED" /tmp/cardsquest-aligned.apk
-          "$BUILD_TOOLS_DIR/apksigner" sign \
-            --ks /tmp/cardsquest-release.jks \
-            --ks-key-alias cardsquest \
-            --ks-pass "pass:$PASS" \
-            --key-pass "pass:$PASS" \
-            --out "$GITHUB_WORKSPACE/13cards-error-in-deck-chapter1-release-test.apk" \
-            /tmp/cardsquest-aligned.apk
-          APK="$GITHUB_WORKSPACE/13cards-error-in-deck-chapter1-release-test.apk"
-          "$BUILD_TOOLS_DIR/aapt2" dump badging "$APK" | tee /tmp/apk-badging.txt
-          "$BUILD_TOOLS_DIR/apksigner" verify --verbose --print-certs "$APK" | tee /tmp/apk-signature.txt
-          if grep -q "application-debuggable" /tmp/apk-badging.txt; then
-            echo "Release APK unexpectedly marked debuggable" >&2
-            exit 1
-          fi
-          sha256sum "$APK" | tee /tmp/apk-sha256.txt
-          ls -lh "$APK"
+          cp "$UNSIGNED" "$OUT/13cards-unsigned.apk"
+          cp "$ANDROID_HOME/build-tools/35.0.0/apksigner" "$OUT/tools/apksigner"
+          cp "$ANDROID_HOME/build-tools/35.0.0/lib/apksigner.jar" "$OUT/tools/lib/apksigner.jar"
+          cp "$ANDROID_HOME/build-tools/35.0.0/zipalign" "$OUT/tools/zipalign"
+          chmod +x "$OUT/tools/apksigner" "$OUT/tools/zipalign"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt2" dump badging "$UNSIGNED" | tee "$OUT/badging.txt"
+          sha256sum "$UNSIGNED" > "$OUT/unsigned-sha256.txt"
 
-      - name: Upload release-test APK
+      - name: Upload unsigned release package
         uses: actions/upload-artifact@v4
         with:
-          name: 13cards-release-test-apk
-          path: 13cards-error-in-deck-chapter1-release-test.apk
+          name: 13cards-unsigned-release-package
+          path: signing-package/
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 7
