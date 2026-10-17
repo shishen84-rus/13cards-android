@@ -1,4 +1,4 @@
-name: Build Android Release APK
+name: Build Visual Chapter APK
 
 on:
   push:
@@ -40,50 +40,52 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Restore game project and isolate package ID
+      - name: Restore visual artwork
         shell: bash
         run: |
           set -euxo pipefail
-          rm -rf "$GITHUB_WORKSPACE/game-project"
-          mkdir -p "$GITHUB_WORKSPACE/game-project"
-          cat payload/part1.b64 payload/part2.b64 payload/part3.b64 payload/part4.b64 | base64 --decode > /tmp/cardsquest.tar.gz
-          tar -xzf /tmp/cardsquest.tar.gz -C "$GITHUB_WORKSPACE/game-project"
-          BUILD="$GITHUB_WORKSPACE/game-project/app/build.gradle"
-          test -f "$BUILD"
-          sed -i "s/applicationId 'com.shishen84.cardsquest'/applicationId 'com.shishen84.cardsquest.release'/" "$BUILD"
-          sed -i "s/versionCode 3/versionCode 4/" "$BUILD"
-          sed -i "s/versionName '0.3.0'/versionName '0.4.0-release'/" "$BUILD"
-          cat "$BUILD"
+          mkdir -p visual/app/src/main/assets
+          base64 --decode visual/assets_b64/living.b64 > visual/app/src/main/assets/living.webp
+          base64 --decode visual/assets_b64/corridor.b64 > visual/app/src/main/assets/corridor.webp
+          base64 --decode visual/assets_b64/room.b64 > visual/app/src/main/assets/room.webp
+          base64 --decode visual/assets_b64/anomaly.b64 > visual/app/src/main/assets/anomaly.webp
+          test -s visual/app/src/main/assets/living.webp
+          test -s visual/app/src/main/assets/corridor.webp
+          test -s visual/app/src/main/assets/room.webp
+          test -s visual/app/src/main/assets/anomaly.webp
+          file visual/app/src/main/assets/*.webp
 
-      - name: Build unsigned release APK
-        working-directory: game-project
+      - name: Build release APK
+        working-directory: visual
         run: gradle --no-daemon --stacktrace assembleRelease
 
-      - name: Create release key and sign APK
+      - name: Sign and verify APK
         shell: bash
         run: |
           set -euxo pipefail
           BT="$ANDROID_HOME/build-tools/35.0.0"
-          UNSIGNED="$GITHUB_WORKSPACE/game-project/app/build/outputs/apk/release/app-release-unsigned.apk"
-          ALIGNED="$GITHUB_WORKSPACE/13cards-release-aligned.apk"
-          FINAL="$GITHUB_WORKSPACE/13cards-error-in-deck-release.apk"
-          KEYSTORE="$RUNNER_TEMP/13cards-release-test.jks"
-          PASS='CardsQuest-2026-TestKey'
+          UNSIGNED="$GITHUB_WORKSPACE/visual/app/build/outputs/apk/release/app-release-unsigned.apk"
+          ALIGNED="$GITHUB_WORKSPACE/13cards-visual-aligned.apk"
+          FINAL="$GITHUB_WORKSPACE/13cards-error-in-deck-visual.apk"
+          KEYSTORE="$RUNNER_TEMP/13cards-visual.jks"
+          PASS="$(openssl rand -hex 16)"
           test -s "$UNSIGNED"
           "$BT/zipalign" -f -p 4 "$UNSIGNED" "$ALIGNED"
-          keytool -genkeypair -v -keystore "$KEYSTORE" -storepass "$PASS" -keypass "$PASS" -alias cardsquest -keyalg RSA -keysize 4096 -validity 10000 -dname "CN=Cards Quest Release, OU=Personal, O=Cards Quest, L=Moscow, C=RU"
-          "$BT/apksigner" sign --ks "$KEYSTORE" --ks-key-alias cardsquest --ks-pass "pass:$PASS" --key-pass "pass:$PASS" --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true --out "$FINAL" "$ALIGNED"
+          "$BT/zipalign" -c -v 4 "$ALIGNED"
+          keytool -genkeypair -v -keystore "$KEYSTORE" -storepass "$PASS" -keypass "$PASS" -alias cardsquestvisual -keyalg RSA -keysize 4096 -validity 10000 -dname "CN=Cards Quest Visual, OU=Personal, O=Cards Quest, C=RU"
+          "$BT/apksigner" sign --ks "$KEYSTORE" --ks-key-alias cardsquestvisual --ks-pass "pass:$PASS" --key-pass "pass:$PASS" --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true --out "$FINAL" "$ALIGNED"
           "$BT/apksigner" verify --verbose --print-certs "$FINAL" | tee "$GITHUB_WORKSPACE/signature.txt"
           "$BT/aapt2" dump badging "$FINAL" | tee "$GITHUB_WORKSPACE/badging.txt"
           sha256sum "$FINAL" | tee "$GITHUB_WORKSPACE/sha256.txt"
+          test "$(stat -c%s "$FINAL")" -gt 100000
           ls -lh "$FINAL"
 
-      - name: Upload signed release APK
+      - name: Upload playable visual APK
         uses: actions/upload-artifact@v4
         with:
-          name: 13cards-signed-release-apk
+          name: 13cards-playable-visual-chapter1
           path: |
-            13cards-error-in-deck-release.apk
+            13cards-error-in-deck-visual.apk
             signature.txt
             badging.txt
             sha256.txt
