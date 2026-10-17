@@ -8,7 +8,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 35
 
     steps:
       - name: Checkout repository
@@ -52,6 +52,10 @@ jobs:
           test -f "$GITHUB_WORKSPACE/game-project/app/src/main/AndroidManifest.xml"
           test -f "$GITHUB_WORKSPACE/game-project/app/src/main/assets/game.js"
           test -f "$GITHUB_WORKSPACE/game-project/app/build.gradle"
+          echo '--- app/build.gradle ---'
+          cat "$GITHUB_WORKSPACE/game-project/app/build.gradle"
+          echo '--- AndroidManifest.xml ---'
+          cat "$GITHUB_WORKSPACE/game-project/app/src/main/AndroidManifest.xml"
 
       - name: Build debug APK with official Android toolchain
         working-directory: game-project
@@ -69,6 +73,23 @@ jobs:
           cp "$APK" "$GITHUB_WORKSPACE/13cards-error-in-deck-chapter1.apk"
           sha256sum "$GITHUB_WORKSPACE/13cards-error-in-deck-chapter1.apk" | tee /tmp/apk-sha256.txt
           ls -lh "$GITHUB_WORKSPACE/13cards-error-in-deck-chapter1.apk"
+
+      - name: Install and launch on Android 15 emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          script: |
+            set -euxo pipefail
+            APK="$GITHUB_WORKSPACE/13cards-error-in-deck-chapter1.apk"
+            adb install -r "$APK"
+            adb shell pm path com.shishen84.cardsquest
+            adb shell am start -W -n com.shishen84.cardsquest/com.shishen84.cardsquest.MainActivity
+            sleep 3
+            adb shell dumpsys activity activities | grep -m1 com.shishen84.cardsquest || true
 
       - name: Upload installable APK
         uses: actions/upload-artifact@v4
