@@ -8,20 +8,33 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Set up Java 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+      - name: Install Android SDK packages
+        shell: bash
+        run: |
+          set -euxo pipefail
+          export ANDROID_HOME="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          export ANDROID_SDK_ROOT="$ANDROID_HOME"
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          if [ ! -x "$SDKMANAGER" ]; then
+            SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager | sort -V | tail -n 1)
+          fi
+          test -x "$SDKMANAGER"
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+          echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> "$GITHUB_ENV"
 
       - name: Set up Gradle 8.9
         uses: gradle/actions/setup-gradle@v4
@@ -32,11 +45,13 @@ jobs:
         shell: bash
         run: |
           set -euxo pipefail
+          rm -rf "$GITHUB_WORKSPACE/game-project"
           mkdir -p "$GITHUB_WORKSPACE/game-project"
           cat payload/part1.b64 payload/part2.b64 payload/part3.b64 payload/part4.b64 | base64 --decode > /tmp/cardsquest.tar.gz
           tar -xzf /tmp/cardsquest.tar.gz -C "$GITHUB_WORKSPACE/game-project"
           test -f "$GITHUB_WORKSPACE/game-project/app/src/main/AndroidManifest.xml"
           test -f "$GITHUB_WORKSPACE/game-project/app/src/main/assets/game.js"
+          test -f "$GITHUB_WORKSPACE/game-project/app/build.gradle"
 
       - name: Build debug APK with official Android toolchain
         working-directory: game-project
@@ -48,10 +63,11 @@ jobs:
           set -euxo pipefail
           APK="$GITHUB_WORKSPACE/game-project/app/build/outputs/apk/debug/app-debug.apk"
           test -s "$APK"
-          BUILD_TOOLS_DIR=$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)
+          BUILD_TOOLS_DIR="$ANDROID_HOME/build-tools/35.0.0"
           "$BUILD_TOOLS_DIR/aapt2" dump badging "$APK" | tee /tmp/apk-badging.txt
           "$BUILD_TOOLS_DIR/apksigner" verify --verbose --print-certs "$APK" | tee /tmp/apk-signature.txt
           cp "$APK" "$GITHUB_WORKSPACE/13cards-error-in-deck-chapter1.apk"
+          sha256sum "$GITHUB_WORKSPACE/13cards-error-in-deck-chapter1.apk" | tee /tmp/apk-sha256.txt
           ls -lh "$GITHUB_WORKSPACE/13cards-error-in-deck-chapter1.apk"
 
       - name: Upload installable APK
