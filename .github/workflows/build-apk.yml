@@ -3,6 +3,8 @@ name: Build Visual Chapter APK
 on:
   push:
     branches: [ main ]
+  pull_request:
+    branches: [ main ]
   workflow_dispatch:
 
 jobs:
@@ -61,6 +63,11 @@ jobs:
 
       - name: Sign and verify APK
         shell: bash
+        env:
+          CARDS_KEYSTORE_B64: ${{ secrets.CARDS_KEYSTORE_B64 }}
+          CARDS_KEYSTORE_PASSWORD: ${{ secrets.CARDS_KEYSTORE_PASSWORD }}
+          CARDS_KEY_ALIAS: ${{ secrets.CARDS_KEY_ALIAS }}
+          CARDS_KEY_PASSWORD: ${{ secrets.CARDS_KEY_PASSWORD }}
         run: |
           set -euxo pipefail
           BT="$ANDROID_HOME/build-tools/35.0.0"
@@ -68,12 +75,25 @@ jobs:
           ALIGNED="$GITHUB_WORKSPACE/13cards-visual-aligned.apk"
           FINAL="$GITHUB_WORKSPACE/13cards-error-in-deck-visual.apk"
           KEYSTORE="$RUNNER_TEMP/13cards-visual.jks"
-          PASS="$(openssl rand -hex 16)"
           test -s "$UNSIGNED"
           "$BT/zipalign" -f -p 4 "$UNSIGNED" "$ALIGNED"
           "$BT/zipalign" -c -v 4 "$ALIGNED"
-          keytool -genkeypair -v -keystore "$KEYSTORE" -storepass "$PASS" -keypass "$PASS" -alias cardsquestvisual -keyalg RSA -keysize 4096 -validity 10000 -dname "CN=Cards Quest Visual, OU=Personal, O=Cards Quest, C=RU"
-          "$BT/apksigner" sign --ks "$KEYSTORE" --ks-key-alias cardsquestvisual --ks-pass "pass:$PASS" --key-pass "pass:$PASS" --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true --out "$FINAL" "$ALIGNED"
+
+          if [ -n "${CARDS_KEYSTORE_B64:-}" ] && [ -n "${CARDS_KEYSTORE_PASSWORD:-}" ] && [ -n "${CARDS_KEY_ALIAS:-}" ] && [ -n "${CARDS_KEY_PASSWORD:-}" ]; then
+            printf '%s' "$CARDS_KEYSTORE_B64" | base64 --decode > "$KEYSTORE"
+            STORE_PASS="$CARDS_KEYSTORE_PASSWORD"
+            KEY_ALIAS="$CARDS_KEY_ALIAS"
+            KEY_PASS="$CARDS_KEY_PASSWORD"
+            echo "stable-secret-keystore" > "$GITHUB_WORKSPACE/signing-mode.txt"
+          else
+            STORE_PASS="$(openssl rand -hex 16)"
+            KEY_PASS="$STORE_PASS"
+            KEY_ALIAS="cardsquestvisual"
+            keytool -genkeypair -v -keystore "$KEYSTORE" -storepass "$STORE_PASS" -keypass "$KEY_PASS" -alias "$KEY_ALIAS" -keyalg RSA -keysize 4096 -validity 10000 -dname "CN=Cards Quest Visual, OU=Personal, O=Cards Quest, C=RU"
+            echo "ephemeral-keystore-fallback" > "$GITHUB_WORKSPACE/signing-mode.txt"
+          fi
+
+          "$BT/apksigner" sign --ks "$KEYSTORE" --ks-key-alias "$KEY_ALIAS" --ks-pass "pass:$STORE_PASS" --key-pass "pass:$KEY_PASS" --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true --out "$FINAL" "$ALIGNED"
           "$BT/apksigner" verify --verbose --print-certs "$FINAL" | tee "$GITHUB_WORKSPACE/signature.txt"
           "$BT/aapt2" dump badging "$FINAL" | tee "$GITHUB_WORKSPACE/badging.txt"
           sha256sum "$FINAL" | tee "$GITHUB_WORKSPACE/sha256.txt"
@@ -89,5 +109,6 @@ jobs:
             signature.txt
             badging.txt
             sha256.txt
+            signing-mode.txt
           if-no-files-found: error
           retention-days: 30
