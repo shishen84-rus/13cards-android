@@ -26,11 +26,9 @@ public class MainActivity extends Activity {
             getWindow().getDecorView().setSystemUiVisibility(5894 | 4096);
         }
     }
-    @Override public void onWindowFocusChanged(boolean hasFocus) {
-        super.onWindowFocusChanged(hasFocus);
-        if (hasFocus) hideSystemUI();
-    }
-    @Override public void onBackPressed() {
-        if (!gameView.handleBack()) super.onBackPressed();
-    }
+    @Override protected void onPause() { if (gameView != null) gameView.onHostPause(); super.onPause(); }
+    @Override protected void onResume() { super.onResume(); if (gameView != null) gameView.onHostResume(); hideSystemUI(); }
+    @Override protected void onDestroy() { if (gameView != null) gameView.releaseAudio(); super.onDestroy(); }
+    @Override public void onWindowFocusChanged(boolean hasFocus) { super.onWindowFocusChanged(hasFocus); if (hasFocus) hideSystemUI(); }
+    @Override public void onBackPressed() { if (!gameView.handleBack()) super.onBackPressed(); }
 }
