@@ -42,7 +42,7 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Restore visual artwork
+      - name: Restore legacy artwork
         shell: bash
         run: |
           set -euxo pipefail
@@ -51,10 +51,25 @@ jobs:
           base64 --decode visual/assets_b64/corridor.b64 > visual/app/src/main/assets/corridor.webp
           base64 --decode visual/assets_b64/room.b64 > visual/app/src/main/assets/room.webp
           base64 --decode visual/assets_b64/anomaly.b64 > visual/app/src/main/assets/anomaly.webp
-          test -s visual/app/src/main/assets/living.webp
-          test -s visual/app/src/main/assets/corridor.webp
-          test -s visual/app/src/main/assets/room.webp
-          test -s visual/app/src/main/assets/anomaly.webp
+
+      - name: Restore v1.2 visual overhaul
+        shell: bash
+        run: |
+          set -euxo pipefail
+          rm -rf /tmp/cards-v12
+          mkdir -p /tmp/cards-v12 visual/app/src/main/assets
+          tar -xzf visual/v12_payload/v12_small.tar.gz -C /tmp/cards-v12
+          cp /tmp/cards-v12/assets/*.webp visual/app/src/main/assets/
+          cp /tmp/cards-v12/GameView.java visual/app/src/main/java/com/shishen84/cardsquestvisual/GameView.java
+          cp /tmp/cards-v12/AudioEngine.java visual/app/src/main/java/com/shishen84/cardsquestvisual/AudioEngine.java
+          cp /tmp/cards-v12/MainActivity.java visual/app/src/main/java/com/shishen84/cardsquestvisual/MainActivity.java
+          test -s visual/app/src/main/assets/menu.webp
+          test -s visual/app/src/main/assets/settings.webp
+          test -s visual/app/src/main/assets/living_new.webp
+          test -s visual/app/src/main/assets/corridor_new.webp
+          test -s visual/app/src/main/assets/room_new.webp
+          test -s visual/app/src/main/assets/anomaly_new.webp
+          test -s visual/app/src/main/java/com/shishen84/cardsquestvisual/AudioEngine.java
           file visual/app/src/main/assets/*.webp
 
       - name: Build release APK
@@ -97,13 +112,13 @@ jobs:
           "$BT/apksigner" verify --verbose --print-certs "$FINAL" | tee "$GITHUB_WORKSPACE/signature.txt"
           "$BT/aapt2" dump badging "$FINAL" | tee "$GITHUB_WORKSPACE/badging.txt"
           sha256sum "$FINAL" | tee "$GITHUB_WORKSPACE/sha256.txt"
-          test "$(stat -c%s "$FINAL")" -gt 50000
+          test "$(stat -c%s "$FINAL")" -gt 250000
           ls -lh "$FINAL"
 
       - name: Upload playable visual APK
         uses: actions/upload-artifact@v4
         with:
-          name: 13cards-playable-visual-chapter1
+          name: 13cards-visual-overhaul-v1.2
           path: |
             13cards-error-in-deck-visual.apk
             signature.txt
